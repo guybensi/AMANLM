@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     cache_dir: str = "cache"
     cache_file: str = "cache/docs.pkl"
 
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
     chunk_size: int = 512
     chunk_overlap: int = 64
     top_k: int = 5

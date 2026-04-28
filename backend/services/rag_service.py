@@ -36,16 +36,20 @@ def calculate_confidence(scored_chunks: list[ScoredChunk]) -> float:
     top_score = scored_chunks[0].score
     scores = [sc.score for sc in scored_chunks]
 
-    # Retrieval score: map [0.40, 1.0] → [0, 100]
-    retrieval_score = max(0.0, (top_score - 0.40) / 0.60) * 100
+    # Calibrated for multilingual models (Hebrew, Arabic, etc.) where
+    # strong matches score 0.30-0.55 rather than 0.60-0.90 like English.
+    # Map [0.05, 0.45] → [0, 100]  so a score of 0.30+ reads as High.
+    FLOOR = 0.05
+    RANGE = 0.40
+    retrieval_score = max(0.0, (top_score - FLOOR) / RANGE) * 100
 
-    # Coverage score: fraction of chunks above 0.55 threshold
-    relevant = sum(1 for s in scores if s > 0.55)
+    # Coverage: chunks above a low realistic threshold
+    relevant = sum(1 for s in scores if s > 0.12)
     coverage_score = (relevant / len(scores)) * 100
 
-    # Consistency score: low std dev = sources agree
+    # Consistency: low spread across top-k = topic is well-covered
     std = float(np.std(scores))
-    consistency_score = max(0.0, (0.15 - std) / 0.15) * 100
+    consistency_score = max(0.0, (0.25 - std) / 0.25) * 100
 
     confidence = 0.60 * retrieval_score + 0.25 * coverage_score + 0.15 * consistency_score
     return round(min(100.0, max(0.0, confidence)), 1)
