@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(wmic logicaldisk:*)",
+      "Bash(npm cache:*)",
+      "Bash(npm run:*)",
+      "Bash(python -c \"from backend.config import settings; print\\('API key set:', bool\\(settings.groq_api_key\\)\\); print\\('Model:', settings.groq_model\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python app.py)"
     ]
   }
 }
