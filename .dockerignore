@@ -1,0 +1,37 @@
+# Version control
+.git
+.gitignore
+
+# Python artefacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+dist
+build
+.pytest_cache
+
+# Virtual environments
+.venv
+venv
+
+# Runtime cache — mount this as a Docker volume instead
+cache
+*.pkl
+
+# Frontend build artefacts (rebuilt inside Docker)
+frontend/node_modules
+static
+
+# Secrets — never bake .env into the image; pass it at runtime
+.env
+
+# Tests
+tests
+
+# IDE / OS / Claude
+.claude
+.vscode
+.idea
+*.DS_Store
+Thumbs.db

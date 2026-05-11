@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    # Pass secrets at runtime via .env — never bake them into the image
+    env_file:
+      - .env
+    volumes:
+      # Persist the vector-store cache across container restarts
+      - cache_data:/app/cache
+    restart: unless-stopped
+
+volumes:
+  cache_data:
