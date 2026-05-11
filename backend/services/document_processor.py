@@ -7,10 +7,19 @@ from backend.config import settings, TESSERACT_AVAILABLE
 
 
 def process_pdf(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Chunk], int]:
-    """Parse a PDF and return its text chunks and raw byte size.
+    """Parse a PDF and return its text and image-derived chunks along with the byte size.
 
-    Iterates over each page using PyMuPDF, skips blank pages, and passes each
-    page's text through ``recursive_chunk()`` to produce overlapping word windows.
+    For each page the processor runs two independent extraction passes:
+
+    1. **Text pass** — ``page.get_text()`` via PyMuPDF; blank pages are skipped.
+    2. **Image pass** — all embedded images larger than 100×100 pixels are
+       extracted with ``doc.extract_image()`` and sent to the Groq vision model
+       via ``describe_image()``.  The returned description is prepended with
+       ``"[Image on page N]: "`` so downstream retrieval can locate it.
+       Images that fail processing are skipped silently.
+
+    Chunk indices are assigned globally across the whole document so that each
+    ``(doc_id, chunk_index)`` pair is unique.
 
     Args:
         file_bytes (bytes): Raw PDF file content as read from an upload.
@@ -18,35 +27,70 @@ def process_pdf(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Chu
         doc_id (str): UUID string identifying the parent document.
 
     Returns:
-        tuple[list[Chunk], int]: A pair of (chunks, size_in_bytes) where
-            ``chunks`` is the ordered list of ``Chunk`` objects across all pages
-            and ``size_in_bytes`` is ``len(file_bytes)``.
+        tuple[list[Chunk], int]: ``(chunks, len(file_bytes))`` where ``chunks``
+            interleaves text and image-derived chunks in page order.
 
     Example:
         >>> with open("report.pdf", "rb") as f:
         ...     chunks, size = process_pdf(f.read(), "report.pdf", "doc-001")
-        >>> len(chunks)
-        42
         >>> chunks[0].page_number
         1
+        >>> any("[Image on page" in c.text for c in chunks)
+        True
     """
     import fitz  # PyMuPDF
-    chunks = []
+    from backend.services.vision_service import describe_image
+
+    chunks: list[Chunk] = []
     doc = fitz.open(stream=file_bytes, filetype="pdf")
+    chunk_idx = 0  # global index across all pages so each chunk is unique
+
     for page_num, page in enumerate(doc, start=1):
+        # ── Text extraction ──────────────────────────────────────────────────
         text = page.get_text()
-        if not text.strip():
-            continue
-        page_chunks = recursive_chunk(text, settings.chunk_size, settings.chunk_overlap)
-        for idx, chunk_text in enumerate(page_chunks):
-            chunks.append(Chunk(
-                chunk_id=str(uuid.uuid4()),
-                doc_id=doc_id,
-                filename=filename,
-                page_number=page_num,
-                chunk_index=idx,
-                text=chunk_text,
-            ))
+        if text.strip():
+            for chunk_text in recursive_chunk(text, settings.chunk_size, settings.chunk_overlap):
+                chunks.append(Chunk(
+                    chunk_id=str(uuid.uuid4()),
+                    doc_id=doc_id,
+                    filename=filename,
+                    page_number=page_num,
+                    chunk_index=chunk_idx,
+                    text=chunk_text,
+                ))
+                chunk_idx += 1
+
+        # ── Image extraction → vision model ──────────────────────────────────
+        for img_info in page.get_images(full=True):
+            xref = img_info[0]
+            try:
+                base_image = doc.extract_image(xref)
+                img_bytes = base_image["image"]
+                img_ext   = base_image.get("ext", "jpeg")
+                img_w     = base_image.get("width", 0)
+                img_h     = base_image.get("height", 0)
+
+                # Skip tiny decorative images (icons, borders, etc.)
+                if img_w < 100 or img_h < 100:
+                    continue
+
+                description = describe_image(img_bytes, img_ext)
+                if description.strip():
+                    labelled = f"[Image on page {page_num}]: {description}"
+                    for chunk_text in recursive_chunk(labelled, settings.chunk_size, settings.chunk_overlap):
+                        chunks.append(Chunk(
+                            chunk_id=str(uuid.uuid4()),
+                            doc_id=doc_id,
+                            filename=filename,
+                            page_number=page_num,
+                            chunk_index=chunk_idx,
+                            text=chunk_text,
+                        ))
+                        chunk_idx += 1
+            except Exception:
+                # Don't fail the whole document if one image can't be processed
+                continue
+
     doc.close()
     return chunks, len(file_bytes)
 
@@ -131,27 +175,58 @@ def process_docx(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Ch
 
 
 def process_image(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Chunk], int]:
-    """Extract text from an image via Tesseract OCR and return chunks and byte size.
+    """Extract text and visual descriptions from an image and return chunks and byte size.
 
-    Requires Tesseract to be installed and discoverable on ``PATH``
-    (``TESSERACT_AVAILABLE`` must be ``True``).  Returns an empty chunk list
-    silently when Tesseract is unavailable so the document is still registered.
+    Uses a two-stage pipeline:
+
+    1. **Groq vision model** (primary) — sends the image to
+       ``settings.groq_vision_model`` which transcribes text and describes
+       charts, tables, and diagrams in natural language.
+    2. **Tesseract OCR** (fallback) — used when the vision API call fails for
+       any reason (network error, model unavailability, etc.).  Requires
+       Tesseract to be installed and ``TESSERACT_AVAILABLE`` to be ``True``.
+
+    If both methods fail or produce no text, an empty list is returned so the
+    document is still registered without content.
 
     Args:
-        file_bytes (bytes): Raw image content (JPEG, PNG, or WebP).
-        filename (str): Original filename stored in chunk metadata.
+        file_bytes (bytes): Raw image content (JPEG, PNG, WebP, etc.).
+        filename (str): Original filename; the extension is used to infer the
+            MIME type for the vision API request.
         doc_id (str): UUID string identifying the parent document.
 
     Returns:
         tuple[list[Chunk], int]: ``(chunks, len(file_bytes))``.  ``chunks`` is
-            empty when Tesseract is not installed or the image contains no text.
+            empty when both pipeline stages produce no usable text.
 
     Example:
         >>> with open("scan.png", "rb") as f:
         ...     chunks, size = process_image(f.read(), "scan.png", "doc-004")
-        >>> chunks[0].text  # OCR-extracted text
+        >>> chunks[0].text  # extracted text
         'Invoice total: $1,200'
     """
+    # ── Primary: Groq vision model ───────────────────────────────────────────
+    try:
+        from backend.services.vision_service import describe_image
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpeg"
+        text = describe_image(file_bytes, ext)
+        if text.strip():
+            raw_chunks = recursive_chunk(text, settings.chunk_size, settings.chunk_overlap)
+            return [
+                Chunk(
+                    chunk_id=str(uuid.uuid4()),
+                    doc_id=doc_id,
+                    filename=filename,
+                    page_number=1,
+                    chunk_index=idx,
+                    text=chunk_text,
+                )
+                for idx, chunk_text in enumerate(raw_chunks)
+            ], len(file_bytes)
+    except Exception:
+        pass  # fall through to Tesseract
+
+    # ── Fallback: Tesseract OCR ──────────────────────────────────────────────
     if not TESSERACT_AVAILABLE:
         return [], len(file_bytes)
     import io
@@ -160,7 +235,7 @@ def process_image(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[C
     image = Image.open(io.BytesIO(file_bytes))
     text = pytesseract.image_to_string(image)
     raw_chunks = recursive_chunk(text, settings.chunk_size, settings.chunk_overlap)
-    chunks = [
+    return [
         Chunk(
             chunk_id=str(uuid.uuid4()),
             doc_id=doc_id,
@@ -170,8 +245,7 @@ def process_image(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[C
             text=chunk_text,
         )
         for idx, chunk_text in enumerate(raw_chunks)
-    ]
-    return chunks, len(file_bytes)
+    ], len(file_bytes)
 
 
 SUPPORTED_TYPES: dict[str, str] = {

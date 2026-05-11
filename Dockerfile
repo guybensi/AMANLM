@@ -5,7 +5,7 @@ WORKDIR /app/frontend
 
 # Install dependencies in a separate layer so they are cached independently
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source and build (vite.config.js sets outDir: '../static')
 COPY frontend/ ./

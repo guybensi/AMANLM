@@ -1,7 +1,8 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from backend.services.document_processor import (
     process_txt,
+    process_image,
     dispatch,
     SUPPORTED_TYPES,
     EXTENSION_MAP,
@@ -105,3 +106,146 @@ class TestDispatch:
             chunks, meta = dispatch(b"pdf-bytes", "report.pdf", "application/octet-stream")
         mock_pdf.assert_called_once()
         assert meta.file_type == "pdf"
+
+
+class TestProcessImageVisionPipeline:
+    """Tests for the two-stage vision model → Tesseract fallback in process_image."""
+
+    def test_uses_vision_model_as_primary(self):
+        with patch("backend.services.vision_service.describe_image", return_value="Vision result"):
+            chunks, size = process_image(b"img", "photo.png", "doc1")
+        assert len(chunks) == 1
+        assert chunks[0].text == "Vision result"
+
+    def test_vision_result_sets_correct_metadata(self):
+        with patch("backend.services.vision_service.describe_image", return_value="Some text"):
+            chunks, _ = process_image(b"img", "scan.jpg", "docX")
+        assert chunks[0].filename == "scan.jpg"
+        assert chunks[0].page_number == 1
+        assert chunks[0].doc_id == "docX"
+
+    def test_falls_back_to_tesseract_when_vision_raises(self):
+        with patch("backend.services.vision_service.describe_image", side_effect=Exception("API down")), \
+             patch("backend.services.document_processor.TESSERACT_AVAILABLE", True), \
+             patch("pytesseract.image_to_string", return_value="OCR result"), \
+             patch("PIL.Image.open"):
+            chunks, _ = process_image(b"img", "scan.png", "doc2")
+        # Tesseract path reached; chunk text comes from OCR
+        assert any("OCR result" in c.text for c in chunks)
+
+    def test_returns_empty_when_vision_raises_and_tesseract_unavailable(self):
+        with patch("backend.services.vision_service.describe_image", side_effect=Exception("API down")), \
+             patch("backend.services.document_processor.TESSERACT_AVAILABLE", False):
+            chunks, size = process_image(b"img", "photo.webp", "doc3")
+        assert chunks == []
+
+    def test_returns_empty_when_vision_returns_blank_and_tesseract_unavailable(self):
+        with patch("backend.services.vision_service.describe_image", return_value="   "), \
+             patch("backend.services.document_processor.TESSERACT_AVAILABLE", False):
+            chunks, _ = process_image(b"img", "blank.png", "doc4")
+        assert chunks == []
+
+    def test_chunk_indices_are_sequential(self):
+        long_text = " ".join([f"w{i}" for i in range(600)])
+        with patch("backend.services.vision_service.describe_image", return_value=long_text):
+            chunks, _ = process_image(b"img", "big.png", "doc5")
+        for i, chunk in enumerate(chunks):
+            assert chunk.chunk_index == i
+
+
+class TestProcessPdfImageExtraction:
+    """Tests for PDF image extraction and vision integration in process_pdf."""
+
+    def _make_fitz_page(self, text="", images=None):
+        """Build a minimal PyMuPDF page mock."""
+        page = MagicMock()
+        page.get_text.return_value = text
+        page.get_images.return_value = images or []
+        return page
+
+    def _make_fitz_doc(self, pages):
+        doc = MagicMock()
+        doc.__iter__ = MagicMock(return_value=iter(enumerate(pages, start=1)))
+        doc.__enter__ = MagicMock(return_value=doc)
+        doc.__exit__ = MagicMock(return_value=False)
+        return doc
+
+    def test_text_only_pdf_produces_text_chunks(self):
+        from backend.services.document_processor import process_pdf
+        with patch("fitz.open") as mock_fitz, \
+             patch("backend.services.vision_service.describe_image"):
+            page = MagicMock()
+            page.get_text.return_value = "Hello world text."
+            page.get_images.return_value = []
+            mock_doc = MagicMock()
+            # enumerate(doc) yields (index, item) — so mock_doc must iterate plain pages
+            mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+            mock_doc.close = MagicMock()
+            mock_fitz.return_value = mock_doc
+
+            chunks, size = process_pdf(b"pdf", "doc.pdf", "docA")
+        assert any("Hello world text." in c.text for c in chunks)
+
+    def test_image_chunk_contains_label_prefix(self):
+        from backend.services.document_processor import process_pdf
+        with patch("fitz.open") as mock_fitz, \
+             patch("backend.services.vision_service.describe_image", return_value="A pie chart showing sales data"):
+            page = MagicMock()
+            page.get_text.return_value = ""
+            page.get_images.return_value = [(1, 0, 0, 0, 0, 0, 0)]  # one image
+            mock_doc = MagicMock()
+            mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+            mock_doc.extract_image.return_value = {
+                "image": b"img_bytes",
+                "ext": "png",
+                "width": 300,
+                "height": 200,
+            }
+            mock_doc.close = MagicMock()
+            mock_fitz.return_value = mock_doc
+
+            chunks, _ = process_pdf(b"pdf", "doc.pdf", "docB")
+        assert any("[Image on page 1]:" in c.text for c in chunks)
+
+    def test_tiny_images_are_skipped(self):
+        from backend.services.document_processor import process_pdf
+        with patch("fitz.open") as mock_fitz, \
+             patch("backend.services.vision_service.describe_image") as mock_vision:
+            page = MagicMock()
+            page.get_text.return_value = ""
+            page.get_images.return_value = [(1, 0, 0, 0, 0, 0, 0)]
+            mock_doc = MagicMock()
+            mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+            mock_doc.extract_image.return_value = {
+                "image": b"tiny",
+                "ext": "png",
+                "width": 50,   # below the 100px threshold
+                "height": 50,
+            }
+            mock_doc.close = MagicMock()
+            mock_fitz.return_value = mock_doc
+
+            process_pdf(b"pdf", "doc.pdf", "docC")
+        mock_vision.assert_not_called()
+
+    def test_failed_image_does_not_abort_pdf_processing(self):
+        from backend.services.document_processor import process_pdf
+        with patch("fitz.open") as mock_fitz, \
+             patch("backend.services.vision_service.describe_image", side_effect=Exception("API down")):
+            page = MagicMock()
+            page.get_text.return_value = "Some page text."
+            page.get_images.return_value = [(1, 0, 0, 0, 0, 0, 0)]
+            mock_doc = MagicMock()
+            mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+            mock_doc.extract_image.return_value = {
+                "image": b"img",
+                "ext": "png",
+                "width": 300,
+                "height": 200,
+            }
+            mock_doc.close = MagicMock()
+            mock_fitz.return_value = mock_doc
+
+            # Should not raise
+            chunks, _ = process_pdf(b"pdf", "doc.pdf", "docD")
+        assert any("Some page text." in c.text for c in chunks)
