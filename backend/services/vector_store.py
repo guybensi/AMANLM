@@ -16,6 +16,26 @@ class VectorStore:
         self._try_load_cache()
 
     def add(self, chunks: list[Chunk], embeddings: np.ndarray, meta: DocumentMeta):
+        """Append chunks, their embeddings, and document metadata to the store.
+
+        Thread-safe.  When ``embeddings`` is non-empty it is vstacked onto the
+        existing embedding matrix; when empty the matrix is left unchanged so
+        documents with zero chunks (e.g. images without Tesseract) can still be
+        registered.
+
+        Args:
+            chunks (list[Chunk]): Parsed text chunks for the document.
+            embeddings (np.ndarray): Float32 array of shape ``(len(chunks), dim)``
+                containing the L2-normalised embedding for each chunk.
+                Pass an empty ``(0, dim)`` array when there are no chunks.
+            meta (DocumentMeta): Metadata for the document being added.
+
+        Example:
+            >>> store = VectorStore()
+            >>> store.add(chunks, embeddings, meta)
+            >>> store.stats()["total_chunks"]
+            5
+        """
         with self._lock:
             self._chunks.extend(chunks)
             if len(embeddings) > 0:
@@ -35,6 +55,28 @@ class VectorStore:
         return list(self._doc_metas.values())
 
     def remove_doc(self, doc_id: str) -> int:
+        """Remove all chunks and embeddings for a document from the store.
+
+        Thread-safe.  Rebuilds the chunk list and embedding matrix by keeping
+        only rows not belonging to ``doc_id``.  Also removes the document's
+        metadata entry.  When ``doc_id`` does not exist, returns 0 without
+        raising.
+
+        Args:
+            doc_id (str): The UUID of the document to remove, as stored in
+                ``DocumentMeta.doc_id``.
+
+        Returns:
+            int: Number of chunks that were removed.  Returns 0 if the document
+                was not found.
+
+        Example:
+            >>> store.add(chunks, embeddings, meta)
+            >>> store.remove_doc(meta.doc_id)
+            5
+            >>> store.stats()["total_chunks"]
+            0
+        """
         with self._lock:
             if doc_id not in self._doc_metas:
                 return 0
@@ -49,6 +91,20 @@ class VectorStore:
             return removed
 
     def stats(self) -> dict:
+        """Return a summary of the store's current memory usage and document counts.
+
+        Returns:
+            dict: Dictionary with the following keys:
+
+                * ``"total_docs"`` (int) — number of registered documents.
+                * ``"total_chunks"`` (int) — total number of stored chunks.
+                * ``"memory_mb"`` (float) — embedding matrix size in MB,
+                  rounded to 2 decimal places.
+
+        Example:
+            >>> store.stats()
+            {'total_docs': 3, 'total_chunks': 47, 'memory_mb': 0.07}
+        """
         mem_mb = self._embeddings.nbytes / (1024 * 1024)
         return {
             "total_docs": len(self._doc_metas),
@@ -57,6 +113,18 @@ class VectorStore:
         }
 
     def save_cache(self):
+        """Persist the current store state to disk as a pickle file.
+
+        Creates the cache directory if it does not exist, then serialises
+        chunks, embeddings, and document metadata to ``settings.cache_file``.
+        Called automatically after uploads and deletions so the store survives
+        process restarts.
+
+        Example:
+            >>> store.add(chunks, embeddings, meta)
+            >>> store.save_cache()
+            # State written to cache/docs.pkl
+        """
         os.makedirs(settings.cache_dir, exist_ok=True)
         with open(settings.cache_file, "wb") as f:
             pickle.dump({

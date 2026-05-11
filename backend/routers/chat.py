@@ -12,6 +12,25 @@ router = APIRouter()
 
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest):
+    """Answer a question using retrieval-augmented generation over uploaded documents.
+
+    Retrieves the top-k most relevant chunks for the query, computes a confidence
+    score, builds the LLM prompt, calls the Groq API, and returns the answer with
+    source proofs and timing metadata.
+
+    Args:
+        request (ChatRequest): Contains ``message`` (the question), ``mode``
+            (``"short"`` or ``"long"``), and ``top_k`` (number of chunks to retrieve).
+
+    Returns:
+        ChatResponse: Includes the LLM ``answer``, ``mode``, ``confidence`` score,
+            ``confidence_label``, ``sources`` list, ``retrieval_time_ms``,
+            ``llm_time_ms``, and ``model_used``.
+
+    Raises:
+        HTTPException 400: When no documents have been uploaded yet.
+        HTTPException 500: When retrieval returns an unexpected empty result.
+    """
     stats = vector_store.stats()
     if stats["total_chunks"] == 0:
         raise HTTPException(

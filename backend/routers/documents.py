@@ -12,6 +12,24 @@ router = APIRouter()
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_documents(files: list[UploadFile] = File(...)):
+    """Process and store one or more uploaded files.
+
+    For each file: dispatches to the appropriate parser (PDF, TXT, DOCX, image),
+    encodes the resulting chunks into embeddings, adds them to the vector store,
+    and persists the cache.  Files with zero chunks (e.g. images without
+    Tesseract) are still registered so they appear in the document list.
+
+    Args:
+        files (list[UploadFile]): One or more files from the multipart form upload.
+
+    Returns:
+        UploadResponse: Contains ``doc_ids``, ``filenames``, ``chunk_counts``,
+            ``total_chunks``, and ``processing_time_ms``.
+
+    Raises:
+        HTTPException 400: When no files are provided.
+        HTTPException 415: When a file's type is not supported.
+    """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
@@ -57,11 +75,29 @@ async def upload_documents(files: list[UploadFile] = File(...)):
 
 @router.get("", response_model=list[DocumentMeta])
 async def list_documents():
+    """Return metadata for all currently stored documents.
+
+    Returns:
+        list[DocumentMeta]: One entry per document, each containing ``doc_id``,
+            ``filename``, ``file_type``, ``chunk_count``, ``upload_time``,
+            and ``size_bytes``.  Returns an empty list when no documents exist.
+    """
     return vector_store.get_all_metas()
 
 
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str):
+    """Remove a document and all its chunks from the store.
+
+    Args:
+        doc_id (str): UUID of the document to delete, as returned by the upload endpoint.
+
+    Returns:
+        dict: ``{"removed_chunks": int}`` — number of chunks that were deleted.
+
+    Raises:
+        HTTPException 404: When no document with the given ``doc_id`` exists.
+    """
     removed = vector_store.remove_doc(doc_id)
     if removed == 0 and doc_id not in [m.doc_id for m in vector_store.get_all_metas()]:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -71,6 +107,13 @@ async def delete_document(doc_id: str):
 
 @router.get("/status", response_model=DocumentsStatus)
 async def get_status():
+    """Return the current state of the vector store and system capabilities.
+
+    Returns:
+        DocumentsStatus: Includes ``total_docs``, ``total_chunks``,
+            ``embedding_model`` name, ``memory_mb`` used by embeddings,
+            and ``tesseract_available`` flag.
+    """
     stats = vector_store.stats()
     return DocumentsStatus(
         total_docs=stats["total_docs"],

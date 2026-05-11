@@ -13,6 +13,32 @@ def get_client() -> OpenAI:
 
 
 def build_prompt(query: str, scored_chunks: list[ScoredChunk], mode: str) -> list[dict]:
+    """Assemble the chat message list to send to the LLM.
+
+    Constructs a system prompt that injects the retrieved source chunks as
+    numbered context blocks and enforces strict source-grounded answering.
+    The ``mode`` parameter controls answer length and style.
+
+    Args:
+        query (str): The user's original question, placed as the final user message.
+        scored_chunks (list[ScoredChunk]): Ranked context chunks from ``retrieve()``.
+            Each chunk appears as a labelled block in the system prompt.
+        mode (str): Answer style — ``"short"`` for 2-3 sentences, ``"long"`` for a
+            detailed structured response.
+
+    Returns:
+        list[dict]: Two-element list of ``{"role": ..., "content": ...}`` dicts
+            suitable for the OpenAI-compatible chat completions API:
+            ``[system_message, user_message]``.
+
+    Example:
+        >>> chunks = retrieve("What causes inflation?", top_k=5)
+        >>> messages = build_prompt("What causes inflation?", chunks, mode="short")
+        >>> messages[0]["role"]
+        'system'
+        >>> messages[1]["content"]
+        'What causes inflation?'
+    """
     length_instruction = (
         "Answer in 2-3 concise sentences. Be direct and to the point."
         if mode == "short"
@@ -45,6 +71,26 @@ SOURCES:
 
 
 def chat_completion(messages: list[dict]) -> str:
+    """Send a message list to the Groq LLM and return the assistant's reply.
+
+    Calls the OpenAI-compatible chat completions endpoint configured in
+    ``settings``.  Uses a low temperature (0.2) to favour factual, consistent
+    responses suitable for document Q&A.
+
+    Args:
+        messages (list[dict]): Conversation history in OpenAI message format,
+            e.g. ``[{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]``.
+
+    Returns:
+        str: The assistant's response text.  Returns an empty string if the
+            model returns no content.
+
+    Example:
+        >>> msgs = build_prompt("Summarise chapter 3", chunks, mode="long")
+        >>> answer = chat_completion(msgs)
+        >>> isinstance(answer, str)
+        True
+    """
     client = get_client()
     response = client.chat.completions.create(
         model=settings.groq_model,
