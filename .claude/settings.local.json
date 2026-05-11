@@ -7,7 +7,21 @@
       "Bash(npm run:*)",
       "Bash(python -c \"from backend.config import settings; print\\('API key set:', bool\\(settings.groq_api_key\\)\\); print\\('Model:', settings.groq_model\\)\")",
       "Bash(pip install:*)",
-      "Bash(python app.py)"
+      "Bash(python app.py)",
+      "Bash(gh issue:*)",
+      "Bash(winget list:*)",
+      "Bash(where gh.exe)",
+      "Bash(git remote:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(python -c \"import pytest; print\\(pytest.__version__\\)\")",
+      "Bash(python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(docker info:*)",
+      "Bash(docker compose up:*)",
+      "Bash(winget run:*)",
+      "Bash(curl -s \"https://api.github.com/repos/guybensi/AMANLM/issues/7\")"
     ]
   }
 }

@@ -15,16 +15,31 @@ def get_client() -> OpenAI:
 def build_prompt(query: str, scored_chunks: list[ScoredChunk], mode: str) -> list[dict]:
     """Assemble the chat message list to send to the LLM.
 
-    Constructs a system prompt that injects the retrieved source chunks as
-    numbered context blocks and enforces strict source-grounded answering.
-    The ``mode`` parameter controls answer length and style.
+    Constructs a NotebookLM-inspired system prompt that injects retrieved source
+    chunks as numbered context blocks.  The prompt instructs the model to:
+
+    * Cite each statement with ``[i]`` notation (or ``[i, j, k]`` for multiple
+      sources), using the source index shown in the context blocks.
+    * **Bold** the most important parts of the response.
+    * Use bullet points when the response is long (unless the query asks for a
+      different format).
+    * Flag — rather than refuse — when a statement draws on knowledge outside
+      the provided sources, so the user can independently verify it.
+    * Note when the sources contain no relevant information for the query.
+    * Ask for clarification when the query is ambiguous.
+    * Never use the word "delve" or "delves".
+    * Default to English unless the query requests another language.
+
+    The ``mode`` parameter controls answer length:
+
+    * ``"short"`` — 2-3 concise sentences, direct and to the point.
+    * ``"long"`` — comprehensive, well-structured with sections or bullets.
 
     Args:
         query (str): The user's original question, placed as the final user message.
         scored_chunks (list[ScoredChunk]): Ranked context chunks from ``retrieve()``.
-            Each chunk appears as a labelled block in the system prompt.
-        mode (str): Answer style — ``"short"`` for 2-3 sentences, ``"long"`` for a
-            detailed structured response.
+            Each chunk appears as a labelled ``[Source i]`` block in the system prompt.
+        mode (str): Answer style — ``"short"`` or ``"long"``.
 
     Returns:
         list[dict]: Two-element list of ``{"role": ..., "content": ...}`` dicts
@@ -52,14 +67,17 @@ def build_prompt(query: str, scored_chunks: list[ScoredChunk], mode: str) -> lis
         )
     context = "\n\n---\n\n".join(context_blocks)
 
-    system_prompt = f"""You are a research assistant. Your ONLY job is to answer questions based strictly on the provided source documents.
+    system_prompt = f"""You are a helpful expert research assistant. Your goal is to provide insightful, well-grounded responses to the user's query by drawing on the sources below.
 
-RULES:
-1. Answer ONLY using information from the sources below. Do NOT use outside knowledge.
-2. If the answer cannot be found in the sources, say: "I could not find a clear answer in the uploaded documents."
-3. {length_instruction}
-4. Do NOT fabricate citations or page numbers. The system will attach citations automatically.
-5. Speak in first person as if you read the documents yourself.
+RESPONSE GUIDELINES:
+1. Cite each statement that is supported by a source using [i] notation immediately after the statement, where i is the source number. If a statement draws on multiple sources, list all of them: [i, j, k].
+2. **Bold** the most important parts of your response to make it easier to understand.
+3. {length_instruction} If your response is getting long and no specific format was requested, use bullet points to improve readability.
+4. If the query is ambiguous, ask the user for clarification before answering.
+5. If any part of your response includes information from outside the given sources, explicitly note that it is not from the sources and that the user may want to independently verify it.
+6. If the sources do not contain any relevant information for the query, state that clearly in your response.
+7. Do not use the word "delve" or "delves".
+8. Answer in English unless the query requests a response in a different language.
 
 SOURCES:
 {context}"""

@@ -78,3 +78,47 @@ class TestBuildPrompt:
         messages = build_prompt("Q?", chunks, mode="short")
         system = messages[0]["content"]
         assert "---" in system
+
+
+class TestBuildPromptNotebookLMBehaviors:
+    """Tests for the NotebookLM-inspired prompting additions."""
+
+    def test_citation_notation_instructed(self):
+        """Prompt must instruct the model to use [i] citation notation."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "[i]" in system
+
+    def test_bold_instruction_present(self):
+        """Prompt must ask the model to bold the most important parts."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "Bold" in system or "bold" in system
+
+    def test_outside_source_flagging_instructed(self):
+        """Prompt must instruct the model to flag information not from sources."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "outside" in system or "not from the sources" in system or "independently verify" in system
+
+    def test_no_relevant_info_note_instructed(self):
+        """Prompt must tell the model to note when sources have no relevant info."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "not contain" in system or "no relevant" in system or "do not contain" in system
+
+    def test_clarification_instruction_present(self):
+        """Prompt must instruct the model to ask for clarification on ambiguous queries."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "clarification" in system or "ambiguous" in system
+
+    def test_no_delve_instruction_present(self):
+        """Prompt must forbid the word 'delve'."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "delve" in system  # the rule mentions the word to forbid it
+
+    def test_english_default_instruction_present(self):
+        """Prompt must instruct the model to default to English."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "English" in system
+
+    def test_multi_source_citation_format_instructed(self):
+        """Prompt must show the multi-source citation format [i, j, k]."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "[i, j, k]" in system or "multiple sources" in system
