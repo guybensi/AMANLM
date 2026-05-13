@@ -4,7 +4,7 @@ import FileChip from '../Upload/FileChip'
 import { useDocuments } from '../../hooks/useDocuments'
 import { useAppStore } from '../../stores/appStore'
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }) {
   const { documents, fetchDocuments } = useDocuments()
   const { darkMode, toggleDarkMode, clearChat } = useAppStore()
 
@@ -13,7 +13,16 @@ export default function Sidebar() {
   }, [])
 
   return (
-    <aside className="w-72 bg-slate-900 border-r border-slate-700 flex flex-col h-screen shrink-0">
+    <aside
+      className={`
+        fixed md:relative inset-y-0 left-0 z-30 md:z-auto
+        w-72 shrink-0
+        bg-slate-900 border-r border-slate-700
+        flex flex-col h-screen
+        transition-transform duration-300 ease-in-out
+        ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}
+    >
       {/* Header */}
       <div className="px-4 py-4 border-b border-slate-700">
         <div className="flex items-center justify-between">
@@ -21,13 +30,23 @@ export default function Sidebar() {
             <h1 className="text-lg font-bold text-white tracking-tight">AMANLM</h1>
             <p className="text-xs text-slate-500">AI Research Assistant</p>
           </div>
-          <button
-            onClick={toggleDarkMode}
-            className="text-slate-400 hover:text-slate-200 transition-colors text-lg"
-            title="Toggle dark mode"
-          >
-            {darkMode ? '☀️' : '🌙'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleDarkMode}
+              className="text-slate-400 hover:text-slate-200 transition-colors text-lg"
+              title="Toggle dark mode"
+            >
+              {darkMode ? '☀️' : '🌙'}
+            </button>
+            {/* Close button — mobile only */}
+            <button
+              onClick={onClose}
+              className="md:hidden text-slate-400 hover:text-slate-200 transition-colors text-base"
+              aria-label="Close sidebar"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       </div>
 

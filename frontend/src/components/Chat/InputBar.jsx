@@ -25,7 +25,7 @@ export default function InputBar({ onSend, loading, hasDocuments }) {
     <div className="border-t border-slate-700 bg-slate-900 px-4 py-3">
       {/* Mode toggle */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-slate-500 font-medium">Answer mode:</span>
+        <span className="text-xs text-slate-500 font-medium hidden sm:inline">Answer mode:</span>
         <div className="flex bg-slate-800 rounded-lg p-0.5 gap-0.5">
           {['short', 'long'].map((m) => (
             <button
@@ -52,22 +52,22 @@ export default function InputBar({ onSend, loading, hasDocuments }) {
           onKeyDown={handleKey}
           rows={2}
           disabled={loading || !hasDocuments}
-          placeholder={hasDocuments ? 'Ask a question about your documents…' : 'Upload documents first to start chatting'}
-          className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          placeholder={hasDocuments ? 'Ask a question…' : 'Upload documents first'}
+          className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-3 sm:px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <button
           onClick={handleSend}
           disabled={!text.trim() || loading || !hasDocuments}
-          className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-2.5 text-sm font-medium transition-colors h-[52px] flex items-center gap-1.5 shrink-0"
+          className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-3 sm:px-4 py-2.5 text-sm font-medium transition-colors h-[52px] flex items-center gap-1 shrink-0"
         >
           {loading ? (
             <span className="animate-spin">⟳</span>
           ) : (
-            <>Send <span>↑</span></>
+            <><span className="hidden sm:inline">Send </span><span>↑</span></>
           )}
         </button>
       </div>
-      <p className="text-xs text-slate-600 mt-1.5">Enter to send · Shift+Enter for new line</p>
+      <p className="text-xs text-slate-600 mt-1.5 hidden sm:block">Enter to send · Shift+Enter for new line</p>
     </div>
   )
 }
