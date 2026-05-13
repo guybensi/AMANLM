@@ -27,6 +27,7 @@ class ChatResponse(BaseModel):
     mode: Literal["short", "long"]
     confidence: float
     confidence_label: Literal["High", "Medium", "Low", "Very Low"]
+    contains_inference: bool
     sources: list[SourceProof]
     retrieval_time_ms: int
     llm_time_ms: int

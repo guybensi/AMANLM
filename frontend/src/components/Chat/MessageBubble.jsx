@@ -68,6 +68,14 @@ export default function MessageBubble({ message }) {
             </ReactMarkdown>
           </div>
 
+          {/* Inference warning */}
+          {message.contains_inference && (
+            <div className="mt-3 flex items-start gap-2 text-xs text-amber-300 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2">
+              <span className="shrink-0 mt-px">⚠</span>
+              <span>This response may contain inferences or information not directly found in your sources. Verify independently where needed.</span>
+            </div>
+          )}
+
           {/* Confidence bar */}
           {message.confidence !== undefined && (
             <ConfidenceBar confidence={message.confidence} label={message.confidence_label} />

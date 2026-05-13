@@ -7,6 +7,7 @@ from backend.services.rag_service import (
     calculate_confidence,
     confidence_label,
     build_source_proofs,
+    contains_inference_markers,
 )
 
 
@@ -144,3 +145,50 @@ class TestBuildSourceProofs:
         scored = [ScoredChunk(chunk=chunk, score=0.123456)]
         proofs = build_source_proofs(scored)
         assert proofs[0].relevance_score == 0.123
+
+
+class TestContainsInferenceMarkers:
+    """Tests for inference detection via phrase scanning and confidence threshold."""
+
+    def test_clean_answer_high_confidence_returns_false(self):
+        assert contains_inference_markers("The report states sales grew 12%.", 80.0) is False
+
+    def test_independently_verify_phrase_triggers_true(self):
+        assert contains_inference_markers("You may want to independently verify this claim.", 75.0) is True
+
+    def test_not_from_the_sources_triggers_true(self):
+        assert contains_inference_markers("This information is not from the sources.", 70.0) is True
+
+    def test_outside_the_sources_triggers_true(self):
+        assert contains_inference_markers("This is outside the given sources.", 60.0) is True
+
+    def test_general_knowledge_phrase_triggers_true(self):
+        assert contains_inference_markers("Based on general knowledge, this is expected.", 65.0) is True
+
+    def test_phrase_detection_is_case_insensitive(self):
+        assert contains_inference_markers("You should INDEPENDENTLY VERIFY this.", 75.0) is True
+
+    def test_very_low_confidence_triggers_true_regardless_of_text(self):
+        assert contains_inference_markers("The answer is perfectly clear.", 15.0) is True
+
+    def test_confidence_exactly_at_threshold_is_not_flagged(self):
+        assert contains_inference_markers("Plain answer with no inference phrases.", 20.0) is False
+
+    def test_confidence_just_below_threshold_triggers_true(self):
+        assert contains_inference_markers("Plain answer with no inference phrases.", 19.9) is True
+
+    def test_both_signals_present_returns_true(self):
+        assert contains_inference_markers("Independently verify this claim.", 10.0) is True
+
+    def test_empty_answer_very_low_confidence_returns_true(self):
+        assert contains_inference_markers("", 5.0) is True
+
+    def test_empty_answer_high_confidence_returns_false(self):
+        assert contains_inference_markers("", 80.0) is False
+
+    def test_partial_phrase_does_not_trigger(self):
+        # "verify" alone should not trigger — only the full phrase "independently verify"
+        assert contains_inference_markers("Please verify the document.", 50.0) is False
+
+    def test_my_training_phrase_triggers_true(self):
+        assert contains_inference_markers("Based on my training data, this seems likely.", 60.0) is True

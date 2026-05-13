@@ -2,7 +2,7 @@ import time
 from fastapi import APIRouter, HTTPException
 
 from backend.models.chat import ChatRequest, ChatResponse
-from backend.services.rag_service import retrieve, calculate_confidence, confidence_label, build_source_proofs
+from backend.services.rag_service import retrieve, calculate_confidence, confidence_label, build_source_proofs, contains_inference_markers
 from backend.services.llm_service import build_prompt, chat_completion
 from backend.services.vector_store import vector_store
 from backend.config import settings
@@ -63,6 +63,7 @@ async def chat(request: ChatRequest):
         mode=request.mode,
         confidence=confidence,
         confidence_label=label,
+        contains_inference=contains_inference_markers(answer, confidence),
         sources=sources,
         retrieval_time_ms=retrieval_ms,
         llm_time_ms=llm_ms,

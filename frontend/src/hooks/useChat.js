@@ -33,6 +33,7 @@ export function useChat() {
         content: data.answer,
         confidence: data.confidence,
         confidence_label: data.confidence_label,
+        contains_inference: data.contains_inference,
         sources: data.sources,
         mode: data.mode,
         model_used: data.model_used,

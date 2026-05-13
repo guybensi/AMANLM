@@ -138,6 +138,70 @@ def confidence_label(score: float) -> str:
     return "Very Low"
 
 
+# Phrases the LLM is explicitly instructed to use (via the system prompt) when it
+# draws on knowledge outside the provided sources.  Detecting them in the answer
+# lets us surface an inference warning without an extra API call.
+_INFERENCE_MARKERS: tuple[str, ...] = (
+    "independently verify",
+    "not from the sources",
+    "not from my sources",
+    "outside the given sources",
+    "outside of the given sources",
+    "outside the sources",
+    "not explicitly stated in the sources",
+    "information from outside",
+    "not found in the sources",
+    "not in the sources",
+    "beyond the sources",
+    "not contained in the sources",
+    "based on general knowledge",
+    "based on my training",
+)
+
+# Retrieval confidence below this threshold means the sources are a poor match
+# for the query — the LLM likely had to infer or rely on general knowledge.
+_VERY_LOW_CONFIDENCE = 20.0
+
+
+def contains_inference_markers(answer: str, confidence: float) -> bool:
+    """Return True when the answer appears to contain model-generated inference.
+
+    Two independent signals are checked:
+
+    1. **Phrase detection** — scans the answer (case-insensitive) for the
+       specific phrases the system prompt instructs the LLM to include whenever
+       it draws on knowledge outside the retrieved sources (e.g.
+       *"independently verify"*, *"not from the sources"*).
+    2. **Very Low confidence** — a retrieval confidence below
+       ``_VERY_LOW_CONFIDENCE`` (20) means the top-k chunks are a poor
+       semantic match for the query, so the answer is likely based on the
+       model's general knowledge rather than the documents.
+
+    Either signal alone is sufficient to return ``True``.
+
+    Args:
+        answer (str): The LLM-generated answer text.
+        confidence (float): Retrieval confidence score in [0, 100] as returned
+            by ``calculate_confidence()``.
+
+    Returns:
+        bool: ``True`` when the answer likely contains inferences or
+            extrapolations beyond the source documents; ``False`` otherwise.
+
+    Example:
+        >>> contains_inference_markers("You may want to independently verify this.", 75.0)
+        True
+        >>> contains_inference_markers("The report states sales grew 12%.", 80.0)
+        False
+        >>> contains_inference_markers("The answer is clear.", 5.0)
+        True
+    """
+    lower = answer.lower()
+    if any(marker in lower for marker in _INFERENCE_MARKERS):
+        return True
+    return confidence < _VERY_LOW_CONFIDENCE
+
+
 def build_source_proofs(scored_chunks: list[ScoredChunk]) -> list[SourceProof]:
     """Build deduplicated source-proof cards from a ranked list of scored chunks.
 
