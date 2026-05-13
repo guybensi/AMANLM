@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,9 +9,15 @@ from backend.routers import documents, chat
 
 app = FastAPI(title="AMANLM", version="1.0.0")
 
+# ALLOWED_ORIGINS: comma-separated list of allowed frontend origins.
+# Set to your Vercel URL in Railway, e.g. "https://amanlm.vercel.app".
+# Defaults to "*" for local development.
+_raw = os.environ.get("ALLOWED_ORIGINS", "*")
+_origins = [o.strip() for o in _raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

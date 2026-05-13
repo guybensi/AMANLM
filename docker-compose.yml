@@ -1,9 +1,8 @@
 services:
-  app:
+  backend:
     build: .
     ports:
       - "8000:8000"
-    # Pass secrets at runtime via .env — never bake them into the image
     env_file:
       - .env
     volumes:

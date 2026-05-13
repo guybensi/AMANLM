@@ -1,19 +1,4 @@
-# ─── Stage 1: Build the React frontend ───────────────────────────────────────
-FROM node:20-slim AS frontend-builder
-
-WORKDIR /app/frontend
-
-# Install dependencies in a separate layer so they are cached independently
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install
-
-# Copy source and build (vite.config.js sets outDir: '../static')
-COPY frontend/ ./
-RUN npm run build
-
-
-# ─── Stage 2: Python runtime ──────────────────────────────────────────────────
-FROM python:3.11-slim AS final
+FROM python:3.11-slim
 
 # System dependencies: Tesseract OCR
 RUN apt-get update \
@@ -33,9 +18,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py ./
 COPY backend/ ./backend/
 
-# Copy the frontend build output from stage 1
-COPY --from=frontend-builder /app/static ./static/
-
 # Create cache directory and a non-root user, then hand over ownership
 RUN mkdir -p cache \
     && adduser --disabled-password --gecos "" appuser \
@@ -45,11 +27,9 @@ USER appuser
 
 EXPOSE 8000
 
-# Verify the service is reachable before marking the container healthy
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+# Railway sets PORT dynamically; default to 8000 for local Docker runs
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c \
         "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/documents/status')"
 
-# Run without --reload; hot-reload is not needed in a container
-CMD ["python", "-m", "uvicorn", "backend.main:app", \
-     "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
