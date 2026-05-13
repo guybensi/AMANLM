@@ -282,6 +282,93 @@ def process_image(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[C
     ], len(file_bytes)
 
 
+def process_video(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Chunk], int]:
+    """Transcribe a video or audio file and return its text chunks and byte size.
+
+    Uses a two-stage pipeline:
+
+    1. **Groq Whisper** (primary) — for formats the API accepts natively
+       (mp4, webm, m4a, mp3, wav, flac, ogg, opus), the file is sent
+       directly to ``whisper-large-v3`` via ``transcribe()``.
+    2. **moviepy audio extraction** (fallback for non-native formats such as
+       ``.mov``, ``.avi``, ``.mkv``) — extracts the audio track to an MP3
+       buffer and retries transcription.  Requires ``moviepy`` to be installed;
+       if it is not, the file produces zero chunks rather than raising.
+
+    Files larger than the Groq 25 MB limit return zero chunks gracefully.
+
+    Args:
+        file_bytes (bytes): Raw video or audio content.
+        filename (str): Original filename; the extension determines whether
+            direct upload or audio extraction is attempted first.
+        doc_id (str): UUID string identifying the parent document.
+
+    Returns:
+        tuple[list[Chunk], int]: ``(chunks, len(file_bytes))``.  ``chunks``
+            is empty when transcription produces no usable text.
+
+    Example:
+        >>> with open("lecture.mp4", "rb") as f:
+        ...     chunks, size = process_video(f.read(), "lecture.mp4", "doc-005")
+        >>> chunks[0].text  # first paragraph of the transcript
+        'Welcome to today's session on machine learning.'
+    """
+    from backend.services.transcription_service import transcribe, WHISPER_NATIVE_EXTS
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    text = ""
+
+    if ext in WHISPER_NATIVE_EXTS:
+        # ── Direct Whisper upload ────────────────────────────────────────────
+        try:
+            text = transcribe(file_bytes, filename)
+        except Exception:
+            return [], len(file_bytes)
+    else:
+        # ── moviepy audio extraction for non-native formats ──────────────────
+        try:
+            import io as _io
+            import os
+            import tempfile
+            from moviepy.editor import VideoFileClip
+
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp_vid:
+                tmp_vid.write(file_bytes)
+                tmp_vid_path = tmp_vid.name
+
+            tmp_audio_path = tmp_vid_path.rsplit(".", 1)[0] + ".mp3"
+            try:
+                clip = VideoFileClip(tmp_vid_path)
+                clip.audio.write_audiofile(tmp_audio_path, verbose=False, logger=None)
+                clip.close()
+                with open(tmp_audio_path, "rb") as f:
+                    audio_bytes = f.read()
+                audio_filename = filename.rsplit(".", 1)[0] + ".mp3"
+                text = transcribe(audio_bytes, audio_filename)
+            finally:
+                os.unlink(tmp_vid_path)
+                if os.path.exists(tmp_audio_path):
+                    os.unlink(tmp_audio_path)
+        except Exception:
+            return [], len(file_bytes)
+
+    if not text.strip():
+        return [], len(file_bytes)
+
+    raw_chunks = recursive_chunk(text, settings.chunk_size, settings.chunk_overlap)
+    return [
+        Chunk(
+            chunk_id=str(uuid.uuid4()),
+            doc_id=doc_id,
+            filename=filename,
+            page_number=1,
+            chunk_index=idx,
+            text=chunk_text,
+        )
+        for idx, chunk_text in enumerate(raw_chunks)
+    ], len(file_bytes)
+
+
 SUPPORTED_TYPES: dict[str, str] = {
     "application/pdf": "pdf",
     "text/plain": "txt",
@@ -290,6 +377,19 @@ SUPPORTED_TYPES: dict[str, str] = {
     "image/jpeg": "image",
     "image/png": "image",
     "image/webp": "image",
+    # Video / audio
+    "video/mp4": "video",
+    "video/webm": "video",
+    "video/quicktime": "video",
+    "video/x-msvideo": "video",
+    "video/x-matroska": "video",
+    "video/x-m4v": "video",
+    "audio/mpeg": "video",
+    "audio/mp4": "video",
+    "audio/wav": "video",
+    "audio/ogg": "video",
+    "audio/flac": "video",
+    "audio/opus": "video",
 }
 
 EXTENSION_MAP: dict[str, str] = {
@@ -301,6 +401,19 @@ EXTENSION_MAP: dict[str, str] = {
     ".jpeg": "image",
     ".png": "image",
     ".webp": "image",
+    # Video / audio
+    ".mp4": "video",
+    ".webm": "video",
+    ".mov": "video",
+    ".avi": "video",
+    ".mkv": "video",
+    ".m4v": "video",
+    ".mp3": "video",
+    ".m4a": "video",
+    ".wav": "video",
+    ".ogg": "video",
+    ".flac": "video",
+    ".opus": "video",
 }
 
 
@@ -354,6 +467,7 @@ def dispatch(
         "txt": process_txt,
         "docx": process_docx,
         "image": process_image,
+        "video": process_video,
     }
     chunks, size_bytes = processors[ftype](file_bytes, filename, doc_id)
 

@@ -30,3 +30,8 @@ python-multipart>=0.0.12
 
 # Token counting for chunking
 tiktoken>=0.7.0
+
+# Video processing — optional, only needed for non-native video formats (.mov, .avi, .mkv)
+# Requires ffmpeg to be installed on the system.
+# pip install moviepy
+# moviepy>=1.0.3

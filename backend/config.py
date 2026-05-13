@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(..., env="GROQ_API_KEY")
     groq_model: str = Field("llama-3.3-70b-versatile", env="GROQ_MODEL")
     groq_vision_model: str = Field("meta-llama/llama-4-scout-17b-16e-instruct", env="GROQ_VISION_MODEL")
+    groq_audio_model: str = Field("whisper-large-v3", env="GROQ_AUDIO_MODEL")
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
     cache_dir: str = "cache"
