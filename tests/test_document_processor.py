@@ -1,7 +1,9 @@
+import io
 import pytest
 from unittest.mock import patch, MagicMock
 from backend.services.document_processor import (
     process_txt,
+    process_docx,
     process_image,
     dispatch,
     SUPPORTED_TYPES,
@@ -249,3 +251,113 @@ class TestProcessPdfImageExtraction:
             # Should not raise
             chunks, _ = process_pdf(b"pdf", "doc.pdf", "docD")
         assert any("Some page text." in c.text for c in chunks)
+
+
+class TestProcessDocx:
+    """Tests for structured DOCX extraction (paragraphs + tables + heading markers)."""
+
+    def _make_docx(self, paragraphs=None, tables=None):
+        """Build a minimal python-docx Document mock."""
+        doc = MagicMock()
+
+        para_mocks = []
+        for text, style_name in (paragraphs or []):
+            p = MagicMock()
+            p.text = text
+            p.style.name = style_name
+            para_mocks.append(p)
+        doc.paragraphs = para_mocks
+
+        table_mocks = []
+        for rows_data in (tables or []):
+            table = MagicMock()
+            row_mocks = []
+            for row_cells in rows_data:
+                row = MagicMock()
+                cell_mocks = []
+                for cell_text in row_cells:
+                    cell = MagicMock()
+                    cell.text = cell_text
+                    cell_mocks.append(cell)
+                row.cells = cell_mocks
+                row_mocks.append(row)
+            table.rows = row_mocks
+            table_mocks.append(table)
+        doc.tables = table_mocks
+
+        return doc
+
+    def test_paragraph_text_extracted(self):
+        doc = self._make_docx(paragraphs=[("Hello world.", "Normal")])
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc1")
+        assert any("Hello world." in c.text for c in chunks)
+
+    def test_heading_gets_hash_prefix(self):
+        doc = self._make_docx(paragraphs=[("Introduction", "Heading 1")])
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc2")
+        assert any("# Introduction" in c.text for c in chunks)
+
+    def test_empty_paragraphs_skipped(self):
+        doc = self._make_docx(paragraphs=[("  ", "Normal"), ("Real text.", "Normal")])
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc3")
+        full = " ".join(c.text for c in chunks)
+        assert "Real text." in full
+        assert full.count("Real text.") == 1
+
+    def test_table_rows_extracted_as_pipe_delimited(self):
+        tables = [[["Name", "Age"], ["Alice", "30"]]]
+        doc = self._make_docx(tables=tables)
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc4")
+        full = " ".join(c.text for c in chunks)
+        assert "Name | Age" in full
+        assert "Alice | 30" in full
+
+    def test_merged_cells_deduplicated(self):
+        # python-docx repeats merged cell text across spanned cells
+        tables = [[["Merged", "Merged", "Other"]]]
+        doc = self._make_docx(tables=tables)
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc5")
+        full = " ".join(c.text for c in chunks)
+        # "Merged" should appear only once in the pipe-delimited row
+        assert full.count("Merged") == 1
+
+    def test_empty_table_cells_skipped(self):
+        tables = [[["", "Value", ""]]]
+        doc = self._make_docx(tables=tables)
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc6")
+        full = " ".join(c.text for c in chunks)
+        assert "Value" in full
+        assert "| |" not in full
+
+    def test_paragraphs_and_tables_combined(self):
+        doc = self._make_docx(
+            paragraphs=[("Summary paragraph.", "Normal")],
+            tables=[[["Col1", "Col2"], ["A", "B"]]],
+        )
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc7")
+        full = " ".join(c.text for c in chunks)
+        assert "Summary paragraph." in full
+        assert "Col1 | Col2" in full
+
+    def test_chunk_indices_are_sequential(self):
+        long_text = " ".join([f"word{i}" for i in range(600)])
+        doc = self._make_docx(paragraphs=[(long_text, "Normal")])
+        with patch("docx.Document", return_value=doc):
+            chunks, _ = process_docx(b"docx", "file.docx", "doc8")
+        assert len(chunks) >= 2
+        for i, chunk in enumerate(chunks):
+            assert chunk.chunk_index == i
+
+    def test_size_bytes_matches_input(self):
+        doc = self._make_docx(paragraphs=[("text", "Normal")])
+        content = b"fake-docx-bytes"
+        with patch("docx.Document", return_value=doc):
+            _, size = process_docx(content, "file.docx", "doc9")
+        assert size == len(content)

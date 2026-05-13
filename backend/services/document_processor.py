@@ -136,10 +136,18 @@ def process_txt(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Chu
 def process_docx(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Chunk], int]:
     """Parse a DOCX file and return its text chunks and byte size.
 
-    Extracts non-empty paragraph text with ``python-docx``, joins paragraphs
-    with newlines, and passes the result through ``recursive_chunk()``.
+    Performs structured extraction in two passes:
+
+    1. **Paragraphs** — non-empty paragraph text is extracted in document order.
+       Headings (styles starting with ``"Heading"``) are prefixed with ``"# "``
+       so the model can recognise document structure.
+    2. **Tables** — each table is serialised as pipe-delimited rows
+       (``"cell1 | cell2 | …"``), with duplicate cells within a merged region
+       deduplicated.  Tables are appended after the paragraph text so context
+       is preserved.
+
     All chunks receive ``page_number=1`` since DOCX pagination is not
-    extracted at this stage.
+    available through python-docx.
 
     Args:
         file_bytes (bytes): Raw DOCX file content.
@@ -157,8 +165,34 @@ def process_docx(file_bytes: bytes, filename: str, doc_id: str) -> tuple[list[Ch
     """
     import io
     from docx import Document
+
     doc = Document(io.BytesIO(file_bytes))
-    full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    parts: list[str] = []
+
+    # ── Paragraphs (with heading markers) ────────────────────────────────────
+    for p in doc.paragraphs:
+        if not p.text.strip():
+            continue
+        if p.style.name.startswith("Heading"):
+            parts.append(f"# {p.text.strip()}")
+        else:
+            parts.append(p.text.strip())
+
+    # ── Tables → pipe-delimited rows ─────────────────────────────────────────
+    for table in doc.tables:
+        for row in table.rows:
+            # python-docx repeats merged cell text across spanned cells — dedupe
+            seen: set[str] = set()
+            cells: list[str] = []
+            for cell in row.cells:
+                text = cell.text.strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    cells.append(text)
+            if cells:
+                parts.append(" | ".join(cells))
+
+    full_text = "\n".join(parts)
     raw_chunks = recursive_chunk(full_text, settings.chunk_size, settings.chunk_overlap)
     chunks = [
         Chunk(
