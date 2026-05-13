@@ -1,12 +1,51 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import ConfidenceBar from './ConfidenceBar'
 import SourceCard from '../Sources/SourceCard'
 
+// Wrap [1], [2, 3] etc. in a sentinel so the custom code renderer can intercept them.
+// Only matches purely-numeric citation patterns — safe against markdown link syntax.
+function wrapCitations(text) {
+  return text.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (_, nums) => `\`[[${nums}]]\``)
+}
+
 export default function MessageBubble({ message }) {
   const [showSources, setShowSources] = useState(false)
+  const [highlightedSources, setHighlightedSources] = useState(new Set())
+  const cardRefs = useRef({})
   const isUser = message.role === 'user'
+
+  const handleCitationClick = useCallback((rawNums) => {
+    const indices = rawNums.split(',').map(n => parseInt(n.trim(), 10) - 1) // 0-based
+    setShowSources(true)
+    setHighlightedSources(new Set(indices))
+    const firstValid = indices.find(i => cardRefs.current[i])
+    if (firstValid !== undefined) {
+      setTimeout(() => cardRefs.current[firstValid]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60)
+    }
+  }, [])
+
+  const markdownComponents = {
+    code: ({ children, className }) => {
+      const str = String(children)
+      const match = str.match(/^\[\[(\d+(?:,\s*\d+)*)\]\]$/)
+      if (match) {
+        const rawNums = match[1]
+        const labels = rawNums.split(',').map(n => n.trim())
+        return (
+          <button
+            onClick={() => handleCitationClick(rawNums)}
+            className="inline-flex items-center mx-0.5 px-1.5 py-0.5 bg-indigo-900/60 hover:bg-indigo-700/70 border border-indigo-600/50 text-indigo-300 text-xs font-mono rounded cursor-pointer transition-colors"
+            title={`Jump to source${labels.length > 1 ? 's' : ''} ${labels.join(', ')}`}
+          >
+            {labels.map(l => `[${l}]`).join('')}
+          </button>
+        )
+      }
+      return <code className={className}>{children}</code>
+    },
+  }
 
   if (isUser) {
     return (
@@ -22,9 +61,11 @@ export default function MessageBubble({ message }) {
     <div className="flex justify-start mb-4">
       <div className="max-w-[85%] w-full">
         <div className="bg-slate-800 border border-slate-700 rounded-2xl rounded-tl-sm px-4 py-3 shadow-lg">
-          {/* Answer */}
+          {/* Answer with clickable citation badges */}
           <div className="text-sm text-slate-100 leading-relaxed prose prose-invert prose-sm max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {wrapCitations(message.content)}
+            </ReactMarkdown>
           </div>
 
           {/* Confidence bar */}
@@ -46,7 +87,13 @@ export default function MessageBubble({ message }) {
               {showSources && (
                 <div className="mt-2 flex flex-col gap-2">
                   {message.sources.map((src, i) => (
-                    <SourceCard key={i} source={src} index={i} />
+                    <SourceCard
+                      key={i}
+                      source={src}
+                      index={i}
+                      highlighted={highlightedSources.has(i)}
+                      cardRef={el => { cardRefs.current[i] = el }}
+                    />
                   ))}
                 </div>
               )}
