@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     chunk_overlap: int = 64
     top_k: int = 5
 
+    compress_chunks: bool = Field(False, env="COMPRESS_CHUNKS")
+    compress_min_length: int = Field(200, env="COMPRESS_MIN_LENGTH")
+
     class Config:
         env_file = ".env"
         extra = "ignore"

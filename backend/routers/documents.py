@@ -3,6 +3,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from backend.models.document import UploadResponse, DocumentMeta, DocumentsStatus
 from backend.services.document_processor import dispatch
+from backend.services.compression_service import compress_chunk
 from backend.services.embedding_service import embedding_service
 from backend.services.vector_store import vector_store
 from backend.config import settings, TESSERACT_AVAILABLE
@@ -48,6 +49,8 @@ async def upload_documents(files: list[UploadFile] = File(...)):
             raise HTTPException(status_code=415, detail=str(e))
 
         if chunks:
+            if settings.compress_chunks:
+                chunks = [c.model_copy(update={"text": compress_chunk(c.text)}) for c in chunks]
             texts = [c.text for c in chunks]
             embeddings = embedding_service.encode(texts)
             vector_store.add(chunks, embeddings, meta)
