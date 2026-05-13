@@ -10,6 +10,10 @@ export function useChat() {
   const sendMessage = useCallback(async (text) => {
     if (!text.trim() || loading) return
 
+    const historyToSend = chatHistory
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role, content: m.content }))
+
     const userMsg = { role: 'user', content: text, id: Date.now() }
     addMessage(userMsg)
     setLoading(true)
@@ -20,6 +24,7 @@ export function useChat() {
         message: text,
         mode: answerMode,
         top_k: 5,
+        history: historyToSend,
       })
       const data = res.data
       addMessage({
@@ -38,7 +43,7 @@ export function useChat() {
     } finally {
       setLoading(false)
     }
-  }, [loading, answerMode, addMessage])
+  }, [loading, answerMode, addMessage, chatHistory])
 
   return { chatHistory, sendMessage, loading, error, clearChat }
 }

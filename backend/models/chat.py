@@ -10,10 +10,16 @@ class SourceProof(BaseModel):
     relevance_score: float
 
 
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     mode: Literal["short", "long"] = "short"
     top_k: int = Field(5, ge=1, le=10)
+    history: list[ConversationMessage] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):

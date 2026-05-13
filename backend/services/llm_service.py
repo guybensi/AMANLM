@@ -12,7 +12,12 @@ def get_client() -> OpenAI:
     return _client
 
 
-def build_prompt(query: str, scored_chunks: list[ScoredChunk], mode: str) -> list[dict]:
+def build_prompt(
+    query: str,
+    scored_chunks: list[ScoredChunk],
+    mode: str,
+    history: list[dict] | None = None,
+) -> list[dict]:
     """Assemble the chat message list to send to the LLM.
 
     Constructs a NotebookLM-inspired system prompt that injects retrieved source
@@ -40,18 +45,21 @@ def build_prompt(query: str, scored_chunks: list[ScoredChunk], mode: str) -> lis
         scored_chunks (list[ScoredChunk]): Ranked context chunks from ``retrieve()``.
             Each chunk appears as a labelled ``[Source i]`` block in the system prompt.
         mode (str): Answer style — ``"short"`` or ``"long"``.
+        history (list[dict] | None): Prior conversation turns, each a dict with
+            ``"role"`` (``"user"`` or ``"assistant"``) and ``"content"`` keys.
+            Inserted between the system message and the current user message.
 
     Returns:
-        list[dict]: Two-element list of ``{"role": ..., "content": ...}`` dicts
-            suitable for the OpenAI-compatible chat completions API:
-            ``[system_message, user_message]``.
+        list[dict]: List of ``{"role": ..., "content": ...}`` dicts suitable for
+            the OpenAI-compatible chat completions API:
+            ``[system_message, *history_messages, user_message]``.
 
     Example:
         >>> chunks = retrieve("What causes inflation?", top_k=5)
         >>> messages = build_prompt("What causes inflation?", chunks, mode="short")
         >>> messages[0]["role"]
         'system'
-        >>> messages[1]["content"]
+        >>> messages[-1]["content"]
         'What causes inflation?'
     """
     length_instruction = (
@@ -67,7 +75,7 @@ def build_prompt(query: str, scored_chunks: list[ScoredChunk], mode: str) -> lis
         )
     context = "\n\n---\n\n".join(context_blocks)
 
-    system_prompt = f"""You are a helpful expert research assistant. Your goal is to provide insightful, well-grounded responses to the user's query by drawing on the sources below.
+    system_prompt = f"""You are a helpful expert research assistant. Your goal is to provide insightful, well-grounded responses to the user's query by drawing on the sources below and our conversation history.
 
 RESPONSE GUIDELINES:
 1. Cite each statement that is supported by a source using [i] notation immediately after the statement, where i is the source number. If a statement draws on multiple sources, list all of them: [i, j, k].
@@ -82,10 +90,11 @@ RESPONSE GUIDELINES:
 SOURCES:
 {context}"""
 
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": query},
-    ]
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    for turn in (history or []):
+        messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": query})
+    return messages
 
 
 def chat_completion(messages: list[dict]) -> str:

@@ -53,7 +53,8 @@ async def chat(request: ChatRequest):
 
     # LLM call
     t1 = time.time()
-    messages = build_prompt(request.message, scored_chunks, request.mode)
+    history = [h.model_dump() for h in request.history]
+    messages = build_prompt(request.message, scored_chunks, request.mode, history=history)
     answer = chat_completion(messages)
     llm_ms = int((time.time() - t1) * 1000)
 

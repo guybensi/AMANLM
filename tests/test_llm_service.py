@@ -122,3 +122,45 @@ class TestBuildPromptNotebookLMBehaviors:
         """Prompt must show the multi-source citation format [i, j, k]."""
         system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
         assert "[i, j, k]" in system or "multiple sources" in system
+
+    def test_conversation_history_mentioned_in_system_prompt(self):
+        """System prompt must reference conversation history."""
+        system = build_prompt("Q?", [make_scored_chunk()], mode="short")[0]["content"]
+        assert "conversation history" in system or "conversation" in system
+
+
+class TestBuildPromptHistory:
+    """Tests for conversation history injection."""
+
+    def test_no_history_returns_two_messages(self):
+        messages = build_prompt("Q?", [make_scored_chunk()], mode="short")
+        assert len(messages) == 2
+
+    def test_history_messages_inserted_between_system_and_user(self):
+        history = [
+            {"role": "user", "content": "Previous question"},
+            {"role": "assistant", "content": "Previous answer"},
+        ]
+        messages = build_prompt("Q?", [make_scored_chunk()], mode="short", history=history)
+        assert len(messages) == 4
+        assert messages[0]["role"] == "system"
+        assert messages[1] == {"role": "user", "content": "Previous question"}
+        assert messages[2] == {"role": "assistant", "content": "Previous answer"}
+        assert messages[3] == {"role": "user", "content": "Q?"}
+
+    def test_last_message_is_always_current_query(self):
+        history = [{"role": "user", "content": "Earlier"}, {"role": "assistant", "content": "Reply"}]
+        messages = build_prompt("Current?", [make_scored_chunk()], mode="short", history=history)
+        assert messages[-1]["role"] == "user"
+        assert messages[-1]["content"] == "Current?"
+
+    def test_empty_history_same_as_no_history(self):
+        with_empty = build_prompt("Q?", [make_scored_chunk()], mode="short", history=[])
+        without = build_prompt("Q?", [make_scored_chunk()], mode="short")
+        assert with_empty == without
+
+    def test_single_turn_history(self):
+        history = [{"role": "user", "content": "Hi"}]
+        messages = build_prompt("Q?", [make_scored_chunk()], mode="short", history=history)
+        assert len(messages) == 3
+        assert messages[1] == {"role": "user", "content": "Hi"}
