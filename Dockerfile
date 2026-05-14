@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py ./
 COPY backend/ ./backend/
 
+# Pre-download the embedding model so the first upload doesn't trigger a
+# runtime HuggingFace download (which can OOM or time out on cold containers)
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+
 # Create cache directory and a non-root user, then hand over ownership
 RUN mkdir -p cache \
     && adduser --disabled-password --gecos "" appuser \
