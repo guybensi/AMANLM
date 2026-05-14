@@ -4,6 +4,17 @@ A local NotebookLM-like platform. Upload your documents, videos, and audio files
 
 ---
 
+## Live Demo
+
+The app is deployed and publicly accessible at:
+
+**https://amanlm.vercel.app/**
+
+> Available until **June 12, 2026** (29-day deployment window).
+> Backend hosted on [Railway](https://railway.app) · Frontend hosted on [Vercel](https://vercel.com)
+
+---
+
 ## Features
 
 - **RAG-powered chat** — answers are grounded in your uploaded sources with a NotebookLM-inspired prompt strategy
