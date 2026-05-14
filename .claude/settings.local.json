@@ -21,7 +21,14 @@
       "Bash(docker info:*)",
       "Bash(docker compose up:*)",
       "Bash(winget run:*)",
-      "Bash(curl -s \"https://api.github.com/repos/guybensi/AMANLM/issues/7\")"
+      "Bash(curl -s \"https://api.github.com/repos/guybensi/AMANLM/issues/7\")",
+      "PowerShell(Get-Process *)",
+      "Bash(docker compose down *)",
+      "PowerShell(gh issue *)",
+      "PowerShell(Get-Content *)",
+      "Bash(git commit *)",
+      "Bash(curl *)",
+      "PowerShell(cd \"C:\\\\Users\\\\guy19\\\\OneDrive\\\\Desktop\\\\AMANLM\\\\AMANLM\"; Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\.git|__pycache__|\\\\.pytest' } | Select-Object FullName | Sort-Object FullName | Out-String -Width 200)"
     ]
   }
 }
