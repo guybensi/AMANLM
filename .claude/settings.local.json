@@ -28,7 +28,9 @@
       "PowerShell(Get-Content *)",
       "Bash(git commit *)",
       "Bash(curl *)",
-      "PowerShell(cd \"C:\\\\Users\\\\guy19\\\\OneDrive\\\\Desktop\\\\AMANLM\\\\AMANLM\"; Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\.git|__pycache__|\\\\.pytest' } | Select-Object FullName | Sort-Object FullName | Out-String -Width 200)"
+      "PowerShell(cd \"C:\\\\Users\\\\guy19\\\\OneDrive\\\\Desktop\\\\AMANLM\\\\AMANLM\"; Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\\\.git|__pycache__|\\\\.pytest' } | Select-Object FullName | Sort-Object FullName | Out-String -Width 200)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(taskkill /F /IM uvicorn.exe)"
     ]
   }
 }
