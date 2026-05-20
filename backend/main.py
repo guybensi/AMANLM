@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from backend.routers import documents, chat
 
-app = FastAPI(title="AMANLM", version="1.0.0")
+app = FastAPI(title="AMANLM", version="1.0.0") 
 
 # ALLOWED_ORIGINS: comma-separated list of allowed frontend origins.
 # Set to your Vercel URL in Railway, e.g. "https://amanlm.vercel.app".
